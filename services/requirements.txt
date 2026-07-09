@@ -1,0 +1,30 @@
+# SignalIntel Python Services Requirements (Verified Dependencies)
+# =================================================================
+
+# Web & API Framework (SatelliteEye baseline)
+fastapi==0.135.2
+uvicorn[standard]==0.42.0
+httpx==0.28.1
+pydantic==2.12.5
+pydantic-settings==2.13.1
+
+# Speech-to-Text & Subtitles (SubForge + SatelliteEye)
+faster-whisper==1.2.1
+srt==3.5.3
+pydub==0.25.1
+
+# Translation & LLM Orchestration
+deep-translator==1.11.4
+litellm==1.82.6
+
+# Video, Vision & Media Ingestion
+opencv-python==4.13.0.92
+Pillow==12.1.1
+numpy==2.4.3
+scipy==1.17.1
+ffmpeg-python==0.2.0
+
+# Asynchronous HTTP & Utilities
+aiohttp==3.13.3
+requests==2.33.0
+python-dotenv==1.0.1
