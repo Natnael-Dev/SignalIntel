@@ -1,10 +1,45 @@
+# ==============================================================================
+# SignalIntel Rust Brain Gateway & OCR Dockerfile
+# ==============================================================================
+# Multi-stage build for Axum Gateway, Qdrant Hybrid RAG & Tesseract OCR CLI.
+
 FROM rust:1.80-bullseye as builder
+
 WORKDIR /app
+
+# Copy crates workspace definitions
 COPY crates/ crates/
+
 WORKDIR /app/crates
+
+# Build release binaries for all workspace members
 RUN cargo build --release
 
-FROM debian:bullseye-slim
+# Final runtime image
+FROM debian:bullseye-slim as runtime
+
 WORKDIR /app
-COPY --from=builder /app/crates/target/release/signalintel-core /usr/local/bin/
-CMD ["signalintel-core"]
+
+# Install runtime libraries (SSL, Tesseract OCR with English + Arabic trained data)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl1.1 \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    tesseract-ocr-ara \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled binaries from builder stage
+COPY --from=builder /app/crates/target/release/signalintel-gateway /usr/local/bin/signalintel-gateway
+COPY --from=builder /app/crates/target/release/signalintel-ocr /usr/local/bin/signalintel-ocr
+
+EXPOSE 8080
+
+ENV PORT=8080
+ENV RUST_LOG=info
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/api/v1/health || exit 1
+
+CMD ["signalintel-gateway"]
