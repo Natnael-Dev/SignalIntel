@@ -4,6 +4,7 @@ Exposes REST and WebSocket APIs for:
 1. Live stream ingestion management (FFmpeg subprocess demux)
 2. Real-time audio transcription and translation (Whisper + Deep-Translator)
 3. Live WebSocket broadcast of SRT subtitle blocks
+4. High-frequency health telemetry and stream lifecycle monitoring
 """
 
 import asyncio
@@ -20,6 +21,9 @@ from services.ingestion.models import StreamConfig, StreamStatus, FrameCapture, 
 from services.ingestion.stream_capture import StreamCapture
 from services.audio.models import TranscriptSegment, TranscriptEvent
 from services.audio.pipeline import AudioIntelligencePipeline
+
+PROTOCOL_VERSION = "v1.2-realtime"
+MAX_EVENT_BUFFER = 500
 
 logging.basicConfig(
     level=logging.INFO,
