@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "core",
     "ocr",
+    "channels",
+    "gateway",
 ]
 
 [workspace.package]
