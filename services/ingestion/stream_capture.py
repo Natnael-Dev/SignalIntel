@@ -53,6 +53,8 @@ class StreamCapture:
         self._running = False
         self._frame_counter = 0
         self._chunk_counter = 0
+        self._max_retries = 5
+        self._retry_delay_seconds = 2.0
 
     async def start(self):
         """Starts asynchronous video and audio demuxing workers."""
