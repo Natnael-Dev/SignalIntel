@@ -1,0 +1,36 @@
+# ==============================================================================
+# SignalIntel React / Vite UI Dockerfile
+# ==============================================================================
+# Multi-stage build: Node build environment -> Nginx static serving container.
+
+FROM node:20-alpine as builder
+
+WORKDIR /app
+
+# Copy dependency manifests
+COPY ui/package.json ui/package-lock.json ./
+
+# Install dependencies deterministically
+RUN npm ci
+
+# Copy UI source code and assets
+COPY ui/ ./
+
+# Compile production bundle into /app/dist
+RUN npm run build
+
+# Stage 2: Nginx production runner
+FROM nginx:alpine as runtime
+
+# Copy custom reverse-proxy and SPA routing configuration
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy production dist output from builder
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q -O - http://localhost/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
