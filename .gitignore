@@ -1,0 +1,63 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.ruff_cache/
+
+# Media & Temp data
+*.mp4
+*.mkv
+*.avi
+*.wav
+*.mp3
+*.png
+*.jpg
+*.jpeg
+tmp/
+temp/
+screenshots/
+audio_segments/
+
+# Model Weights & Caches
+models/
+.cache/
+xinference/
+
+# Node / UI
+node_modules/
+dist/
+.next/
+
+# Environment & IDE
+.env
+.env.local
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
