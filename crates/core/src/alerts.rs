@@ -15,6 +15,8 @@ pub struct AlertRule {
     pub webhook_url: Option<String>,
     pub telegram_chat_id: Option<String>,
     pub min_confidence: Option<f64>,
+    /// Alert priority: "P1" (critical), "P2" (elevated), "P3" (informational).
+    pub priority: Option<String>,
 }
 
 impl AlertRule {
@@ -32,7 +34,20 @@ impl AlertRule {
             webhook_url,
             telegram_chat_id,
             min_confidence: None,
+            priority: None,
         }
+    }
+
+    /// Builder: set priority ("P1" | "P2" | "P3").
+    pub fn with_priority(mut self, p: impl Into<String>) -> Self {
+        self.priority = Some(p.into());
+        self
+    }
+
+    /// Builder: set human-readable name.
+    pub fn with_name(mut self, n: impl Into<String>) -> Self {
+        self.name = Some(n.into());
+        self
     }
 }
 
@@ -41,6 +56,8 @@ impl AlertRule {
 pub struct TriggeredAlert {
     pub rule_id: String,
     pub rule_name: Option<String>,
+    /// Priority inherited from the matched AlertRule ("P1" | "P2" | "P3").
+    pub priority: String,
     pub matched_keywords: Vec<String>,
     pub event_id: String,
     pub stream_id: String,
@@ -78,6 +95,7 @@ pub fn evaluate_rules(event: &IntelEvent, rules: &[AlertRule]) -> Vec<TriggeredA
             triggered.push(TriggeredAlert {
                 rule_id: rule.id.clone(),
                 rule_name: rule.name.clone(),
+                priority: rule.priority.clone().unwrap_or_else(|| "P3".into()),
                 matched_keywords: matched,
                 event_id: event.event_id.clone(),
                 stream_id: event.stream_id.clone(),
