@@ -67,3 +67,12 @@ def test_audio_pipeline_srt_formatting():
     parsed = list(srt.parse(seg.srt_block))
     assert len(parsed) == 1
     assert parsed[0].start >= timedelta(seconds=10.0)
+
+
+def test_vad_silence_suppression_mock():
+    """Verify handling of empty or silent transcript segments."""
+    pipeline = AudioIntelligencePipeline()
+    empty_bytes = b""
+    segments = pipeline.process_audio_chunk(empty_bytes)
+    assert isinstance(segments, list)
+
