@@ -1,11 +1,13 @@
 //! SignalIntel Gateway & Brain Orchestrator (Axum Server)
 //!
 //! Exposes HTTP endpoints on port 8080 for:
-//! 1. POST /api/v1/ingest: Ingests Transcript & Vision events from Python, indexes in Qdrant, evaluates rules, dispatches Telegram alerts.
-//! 2. GET /api/v1/search: Executes Multimodal Hybrid RAG search (RRF, k=60).
-//! 3. GET/POST /api/v1/alerts/rules: Manages real-time keyword alert rules.
-//! 4. GET /api/v1/health: Health telemetry and orchestrator metrics.
+//! 1. POST /api/v1/ingest   — Ingests Transcript & Vision events, indexes in Qdrant, dispatches alerts.
+//! 2. GET  /api/v1/search   — Multimodal Hybrid RAG search (RRF, k=60).
+//! 3. GET  /api/v1/alerts   — Returns alert history ring buffer (last 200 entries).
+//! 4. GET|POST /api/v1/alerts/rules — Manages real-time keyword alert rules.
+//! 5. GET  /api/v1/health   — Health telemetry and orchestrator metrics.
 
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use axum::{
@@ -26,11 +28,38 @@ use signalintel_core::{
     evaluate_rules, AlertRule, IntelEvent, QdrantClient, TriggeredAlert,
 };
 
+/// Maximum alert history entries to keep in memory.
+const MAX_ALERT_HISTORY: usize = 200;
+
+/// A persisted alert record for the UI queue panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertHistoryEntry {
+    /// Unique entry ID.
+    pub id: String,
+    /// Alert priority from the matched rule: "P1" | "P2" | "P3".
+    pub priority: String,
+    /// Wall-clock UTC timestamp string, e.g. "14:31:59".
+    pub time_utc: String,
+    /// POSIX timestamp (seconds since epoch) for sorting.
+    pub timestamp: f64,
+    /// Source channel or stream name.
+    pub source: String,
+    /// Human-readable event description (matched keywords + snippet).
+    pub event_description: String,
+    /// Current status: "TRIGGERED" | "REVIEW" | "MONITOR" | "RESOLVED".
+    pub status: String,
+    /// Keywords that matched the alert rule.
+    pub matched_keywords: Vec<String>,
+    /// Rule identifier that fired this alert.
+    pub rule_id: String,
+}
+
 /// Shared Application State for the Gateway.
 #[derive(Clone)]
 pub struct AppState {
     pub rag_client: Arc<QdrantClient>,
     pub alert_rules: Arc<RwLock<Vec<AlertRule>>>,
+    pub alert_history: Arc<RwLock<VecDeque<AlertHistoryEntry>>>,
     pub telegram_channel: Arc<TelegramChannel>,
     pub start_time: std::time::Instant,
 }
@@ -50,12 +79,20 @@ pub struct IngestResponse {
     pub alerts_triggered: Vec<TriggeredAlert>,
 }
 
+/// Format a POSIX timestamp as "HH:MM:SS" UTC string.
+fn format_utc_time(ts_secs: f64) -> String {
+    let secs = ts_secs as u64;
+    let hh = (secs / 3600) % 24;
+    let mm = (secs % 3600) / 60;
+    let ss = secs % 60;
+    format!("{:02}:{:02}:{:02}", hh, mm, ss)
+}
+
 /// Handler for POST /api/v1/ingest
 async fn handle_ingest(
     State(state): State<AppState>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // Determine event type and extract textual intelligence
     let event_type = payload
         .get("event_type")
         .and_then(|v| v.as_str())
@@ -82,7 +119,7 @@ async fn handle_ingest(
         .and_then(|v| v.as_f64())
         .unwrap_or(1.0);
 
-    // Extract core text depending on whether it's transcript or vision
+    // Extract core text depending on event type
     let text_content = if event_type == "transcript_update" || payload.get("segment").is_some() {
         let seg = payload.get("segment");
         let original = seg
@@ -136,7 +173,7 @@ async fn handle_ingest(
         payload.clone(),
     );
 
-    // 1. Index in Qdrant (via RAG client)
+    // 1. Index in Qdrant
     if let Err(err) = state.rag_client.index_event(&intel_event).await {
         error!("Error indexing event in RAG: {}", err);
     }
@@ -145,21 +182,48 @@ async fn handle_ingest(
     let current_rules = state.alert_rules.read().await.clone();
     let triggered_alerts = evaluate_rules(&intel_event, &current_rules);
 
-    // 3. Dispatch triggered alerts to Telegram
-    for alert in &triggered_alerts {
-        if let Some(chat_id) = &alert.telegram_chat_id {
-            let msg = format!(
-                "🚨 <b>SignalIntel Broadcast Alert</b>\n\
-                <b>Channel:</b> {}\n\
-                <b>Trigger:</b> {}\n\
-                <b>Time:</b> +{:.1}s\n\
-                <b>Snippet:</b> <i>{}</i>",
-                alert.channel_name,
-                alert.matched_keywords.join(", "),
-                alert.timestamp,
-                alert.text_snippet
-            );
-            let _ = state.telegram_channel.send_message(chat_id, &msg).await;
+    // 3. Dispatch & persist alerts
+    {
+        let mut history = state.alert_history.write().await;
+        for alert in &triggered_alerts {
+            // Dispatch to Telegram if configured
+            if let Some(chat_id) = &alert.telegram_chat_id {
+                let msg = format!(
+                    "🚨 <b>SignalIntel Broadcast Alert</b>\n\
+                    <b>Priority:</b> {}\n\
+                    <b>Channel:</b> {}\n\
+                    <b>Trigger:</b> {}\n\
+                    <b>Time:</b> +{:.1}s\n\
+                    <b>Snippet:</b> <i>{}</i>",
+                    alert.priority,
+                    alert.channel_name,
+                    alert.matched_keywords.join(", "),
+                    alert.timestamp,
+                    alert.text_snippet
+                );
+                let _ = state.telegram_channel.send_message(chat_id, &msg).await;
+            }
+
+            // Persist to alert history ring buffer
+            let entry = AlertHistoryEntry {
+                id: format!("{}-{}", alert.rule_id, intel_event.event_id),
+                priority: alert.priority.clone(),
+                time_utc: format_utc_time(alert.timestamp),
+                timestamp: alert.timestamp,
+                source: alert.channel_name.clone(),
+                event_description: format!(
+                    "{}: {}",
+                    alert.matched_keywords.join(", "),
+                    &alert.text_snippet.chars().take(80).collect::<String>()
+                ),
+                status: "TRIGGERED".into(),
+                matched_keywords: alert.matched_keywords.clone(),
+                rule_id: alert.rule_id.clone(),
+            };
+            history.push_front(entry);
+            if history.len() > MAX_ALERT_HISTORY {
+                history.pop_back();
+            }
         }
     }
 
@@ -196,13 +260,25 @@ async fn handle_search(
 async fn handle_health(State(state): State<AppState>) -> impl IntoResponse {
     let uptime = state.start_time.elapsed().as_secs();
     let rules_count = state.alert_rules.read().await.len();
+    let alerts_count = state.alert_history.read().await.len();
     Json(serde_json::json!({
         "status": "healthy",
         "service": "signalintel-rust-brain-gateway",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "uptime_seconds": uptime,
         "active_alert_rules": rules_count,
+        "alerts_in_history": alerts_count,
         "qdrant_target": state.rag_client.base_url,
+    }))
+}
+
+/// Handler for GET /api/v1/alerts — returns alert history ring buffer.
+async fn handle_get_alerts(State(state): State<AppState>) -> impl IntoResponse {
+    let history = state.alert_history.read().await;
+    let entries: Vec<&AlertHistoryEntry> = history.iter().collect();
+    Json(serde_json::json!({
+        "alerts": entries,
+        "total": entries.len(),
     }))
 }
 
@@ -233,6 +309,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/api/v1/health", get(handle_health))
         .route("/api/v1/ingest", post(handle_ingest))
         .route("/api/v1/search", get(handle_search))
+        .route("/api/v1/alerts", get(handle_get_alerts))
         .route("/api/v1/alerts/rules", get(handle_list_rules).post(handle_create_rule))
         .layer(cors)
         .with_state(state)
@@ -245,27 +322,67 @@ async fn main() -> anyhow::Result<()> {
         .finish();
     tracing::subscriber::set_global_default(subscriber).ok();
 
-    info!("Starting SignalIntel Rust Brain & Omnichannel Gateway...");
+    info!("Starting SignalIntel Rust Brain & Omnichannel Gateway v0.5.0...");
 
-    // Initialize default alert rules
+    // Initialize prioritized default alert rules
     let default_rules = vec![
         AlertRule::new(
+            "rule_mil_activity",
+            vec![
+                "military exercises".into(), "carrier strike group".into(),
+                "naval operations".into(), "airspace incursion".into(),
+                "tactical maneuvers".into(),
+            ],
+            Some("signalintel_mil_channel".into()),
+            None,
+        ).with_priority("P1").with_name("Military Activity Monitor"),
+
+        AlertRule::new(
             "rule_breaking",
-            vec!["breaking news".into(), "urgent".into(), "developing story".into()],
+            vec![
+                "breaking news".into(), "urgent".into(),
+                "developing story".into(), "emergency".into(),
+            ],
             Some("signalintel_alerts_channel".into()),
             None,
-        ),
+        ).with_priority("P1").with_name("Breaking News Detector"),
+
+        AlertRule::new(
+            "rule_geopolitics",
+            vec![
+                "sanctions".into(), "diplomatic crisis".into(),
+                "summit cancelled".into(), "evacuation".into(),
+                "coup".into(),
+            ],
+            Some("signalintel_geo_channel".into()),
+            None,
+        ).with_priority("P2").with_name("Geopolitical Events"),
+
         AlertRule::new(
             "rule_markets",
-            vec!["interest rate".into(), "federal reserve".into(), "opec".into(), "s&p 500".into()],
+            vec![
+                "interest rate".into(), "federal reserve".into(),
+                "opec".into(), "s&p 500".into(), "market crash".into(),
+            ],
             Some("signalintel_finance_channel".into()),
             None,
-        ),
+        ).with_priority("P2").with_name("Market Intelligence"),
+
+        AlertRule::new(
+            "rule_social_spike",
+            vec![
+                "viral".into(), "trending".into(), "protests".into(),
+                "riots".into(), "mass demonstration".into(),
+            ],
+            None,
+            None,
+        ).with_priority("P3").with_name("Social Sentiment Spike"),
     ];
 
     let state = AppState {
         rag_client: Arc::new(QdrantClient::new(None, None)),
         alert_rules: Arc::new(RwLock::new(default_rules)),
+        alert_history: Arc::new(RwLock::new(VecDeque::new())),
         telegram_channel: Arc::new(TelegramChannel::default()),
         start_time: std::time::Instant::now(),
     };
