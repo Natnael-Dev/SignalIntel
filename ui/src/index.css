@@ -1,0 +1,180 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Rajdhani:wght@600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ════════════════════════════════════════════════════════════════
+   SIGNALINTEL DESIGN SYSTEM — Global CSS
+   ════════════════════════════════════════════════════════════════ */
+
+:root {
+  --si-bg:       #05080C;
+  --si-panel:    #0A0F16;
+  --si-panel-2:  #0D141D;
+  --si-border:   #16222E;
+  --si-border-c: #1E4E5C;
+  --si-cyan:     #29D3E8;
+  --si-green:    #2FE07A;
+  --si-red:      #FF3B47;
+  --si-amber:    #FFB020;
+  --si-text:     #D7E3EE;
+  --si-muted:    #64788C;
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--si-bg);
+  color: var(--si-text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar styling ──────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #16222E transparent;
+}
+*::-webkit-scrollbar { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #16222E; border-radius: 2px; }
+*::-webkit-scrollbar-thumb:hover { background: #1E4E5C; }
+
+/* ── Panel Glow ──────────────────────────────────────────────── */
+.panel-glow {
+  box-shadow: 0 0 0 1px var(--si-border-c), 0 0 16px rgba(41, 211, 232, 0.07);
+}
+
+/* ── Scanline overlay (video tiles only) ─────────────────────── */
+.scanline-overlay {
+  position: relative;
+  overflow: hidden;
+}
+.scanline-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.04) 0px,
+    rgba(0, 0, 0, 0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* ── Static noise texture for video placeholder ──────────────── */
+.video-noise {
+  position: relative;
+  overflow: hidden;
+}
+.video-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.06'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.5;
+  mix-blend-mode: overlay;
+}
+
+/* ── Priority chip utility ───────────────────────────────────── */
+.priority-p1 { color: var(--si-red);   border-color: rgba(255, 59, 71, 0.3);   background: rgba(255, 59, 71, 0.08); }
+.priority-p2 { color: var(--si-amber); border-color: rgba(255, 176, 32, 0.3);  background: rgba(255, 176, 32, 0.08); }
+.priority-p3 { color: var(--si-green); border-color: rgba(47, 224, 122, 0.3);  background: rgba(47, 224, 122, 0.08); }
+
+/* ── Tag chip utility ────────────────────────────────────────── */
+.entity-loc    { color: #29D3E8; background: rgba(41,211,232,0.1);  border-color: rgba(41,211,232,0.25);  }
+.entity-org    { color: #FFB020; background: rgba(255,176,32,0.1);  border-color: rgba(255,176,32,0.25);  }
+.entity-vessel { color: #2FE07A; background: rgba(47,224,122,0.1);  border-color: rgba(47,224,122,0.25);  }
+.entity-per    { color: #A78BFA; background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.25); }
+.entity-mil    { color: #FF3B47; background: rgba(255,59,71,0.1);   border-color: rgba(255,59,71,0.25);   }
+
+/* ── Audio bars animation ────────────────────────────────────── */
+.audio-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.audio-bar {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--si-cyan);
+  animation: audioBar 0.8s ease-in-out infinite;
+}
+.audio-bar:nth-child(1) { animation-duration: 0.7s; animation-delay: 0.00s; }
+.audio-bar:nth-child(2) { animation-duration: 0.9s; animation-delay: 0.12s; }
+.audio-bar:nth-child(3) { animation-duration: 0.6s; animation-delay: 0.24s; }
+.audio-bar:nth-child(4) { animation-duration: 1.1s; animation-delay: 0.08s; }
+.audio-bar:nth-child(5) { animation-duration: 0.8s; animation-delay: 0.16s; }
+
+@keyframes audioBar {
+  0%, 100% { height: 20%; }
+  50%       { height: 100%; }
+}
+
+/* ── Ticker crawl ────────────────────────────────────────────── */
+.ticker-track {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: tickerCrawl 22s linear infinite;
+}
+@keyframes tickerCrawl {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ── Blink animation for LIVE badge ─────────────────────────── */
+@keyframes liveBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.live-dot { animation: liveBlink 1.4s ease-in-out infinite; }
+
+/* ── Fade-in-up for new transcript entries ───────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up { animation: fadeInUp 0.25s ease-out forwards; }
+
+/* ── Pulse dot ───────────────────────────────────────────────── */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(47, 224, 122, 0.5); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 4px rgba(47, 224, 122, 0); }
+}
+.pulse-dot { animation: pulseDot 2s ease-in-out infinite; }
+
+/* ── Metric bar fill animation ───────────────────────────────── */
+@keyframes barFill {
+  from { width: 0%; }
+  to   { width: var(--fill-pct); }
+}
+.metric-fill {
+  animation: barFill 1s ease-out forwards;
+}
+
+/* ── Status indicator row ────────────────────────────────────── */
+.status-online  { color: var(--si-green); }
+.status-offline { color: var(--si-red); }
+.status-demo    { color: var(--si-amber); }
