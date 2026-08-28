@@ -35,6 +35,9 @@ dev = [
     "black>=24.4.0",
 ]
 
+[project.scripts]
+signalintel-server = "services.main:app"
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
