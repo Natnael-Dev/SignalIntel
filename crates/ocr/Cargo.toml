@@ -5,9 +5,16 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "signalintel-ocr"
+path = "src/main.rs"
+
+[lib]
+name = "signalintel_ocr"
+path = "src/lib.rs"
+
 [dependencies]
-tokio = { workspace = true }
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
