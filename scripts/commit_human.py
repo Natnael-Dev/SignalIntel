@@ -38,6 +38,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Human commit time machine script")
     parser.add_argument("message", help="Commit message")
     parser.add_argument("--days-ago", type=int, default=None, help="Approximate days in the past")
+    parser.add_argument("--files", nargs="*", default=None, help="Specific files to stage before committing")
     
     args = parser.parse_args()
     
@@ -47,7 +48,12 @@ if __name__ == "__main__":
     env["GIT_AUTHOR_DATE"] = fake_date
     env["GIT_COMMITTER_DATE"] = fake_date
     
-    subprocess.run(["git", "add", "."], env=env)
+    if args.files:
+        for f in args.files:
+            subprocess.run(["git", "add", f], env=env)
+    else:
+        subprocess.run(["git", "add", "."], env=env)
+
     result = subprocess.run(["git", "commit", "-m", args.message], env=env, capture_output=True, text=True)
     print(result.stdout)
     if result.stderr:
