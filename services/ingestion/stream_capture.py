@@ -89,14 +89,12 @@ class StreamCapture:
         output_pattern = str(self.frames_dir / "frame_%06d.png")
         scale_filter = f"fps={self.config.fps},scale={self.config.resolution}"
 
-        # Standard SatelliteEye FFmpeg arguments with low-latency flags
+        # Standard low-latency FFmpeg frame extraction flags
         cmd = [
             "ffmpeg",
             "-nostdin",
-            "-re",
             "-i", self.config.url,
             "-vf", scale_filter,
-            "-vsync", "vfr",
             "-q:v", "2",
             "-y",
             output_pattern,
@@ -153,8 +151,13 @@ class StreamCapture:
             try:
                 files = sorted(self.frames_dir.glob("frame_*.png"))
                 for file_path in files:
-                    # Ignore the latest frame if it is still being written
-                    if file_path not in seen_frames and file_path != files[-1]:
+                    if file_path not in seen_frames:
+                        # Check file is non-empty before processing
+                        try:
+                            if file_path.stat().st_size < 1024:
+                                continue
+                        except Exception:
+                            continue
                         seen_frames.add(file_path)
                         self._frame_counter += 1
                         self.status.frames_captured = self._frame_counter
