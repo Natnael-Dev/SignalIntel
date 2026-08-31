@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import os
@@ -160,7 +161,20 @@ class StreamManager:
         self.total_frames_captured: int = 0
         self.total_transcripts_produced: int = 0
         self.total_vision_events_produced: int = 0
+        self.latest_frame_path: Optional[str] = None
         self.start_time: datetime = datetime.utcnow()
+
+    def get_latest_frame_path(self) -> Optional[str]:
+        """Returns the most recent frame file path, checking tracking or disk directly."""
+        if self.latest_frame_path and os.path.exists(self.latest_frame_path):
+            return self.latest_frame_path
+        # Search active stream directories as fallback
+        for capture in self.active_streams.values():
+            if hasattr(capture, 'frames_dir') and capture.frames_dir.exists():
+                files = sorted(capture.frames_dir.glob("frame_*.png"))
+                if files:
+                    return str(files[-1])
+        return None
 
     async def start_stream(self, config: StreamConfig) -> StreamStatus:
         """Initializes and starts a new stream capture & intelligence worker."""
@@ -170,8 +184,9 @@ class StreamManager:
                 return existing.status
 
         # Create audio and vision intelligence pipeline instances
+        whisper_model = os.getenv("WHISPER_MODEL", "base")
         audio_pipeline = AudioIntelligencePipeline(
-            model_size="base",
+            model_size=whisper_model,
             default_target_lang=config.target_lang,
         )
         vision_pipeline = VisionPipeline(
@@ -186,6 +201,8 @@ class StreamManager:
         # Define callbacks for frames and audio chunks
         async def handle_frame(frame: FrameCapture):
             self.total_frames_captured += 1
+            if frame.file_path and os.path.exists(frame.file_path):
+                self.latest_frame_path = frame.file_path
             logger.debug(f"Frame #{frame.frame_index} captured for stream [{frame.stream_id}]")
             try:
                 # Concurrently crop lower-third ticker, run OCR, and classify scene via VLM
@@ -273,6 +290,20 @@ stream_manager = StreamManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SignalIntel Media Orchestrator initialized.")
+    auto_start = os.getenv("AUTO_START_STREAM", "false").lower() in ("true", "1", "yes")
+    auto_start_url = os.getenv(
+        "AUTO_START_STREAM_URL",
+        "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+    )
+    if auto_start:
+        logger.info(f"AUTO_START_STREAM is enabled. Initiating default stream: {auto_start_url}")
+        default_config = StreamConfig(
+            stream_id="stream-001",
+            url=auto_start_url,
+            channel_name="CNN INTERNATIONAL",
+            fps=1.0,
+        )
+        asyncio.create_task(stream_manager.start_stream(default_config))
     yield
     await stream_manager.shutdown_all()
     logger.info("SignalIntel Media Orchestrator stopped.")
@@ -292,6 +323,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/api/v1/frames/latest", tags=["Vision"])
+async def get_latest_frame():
+    """Returns the newest captured video frame PNG for live dashboard preview."""
+    frame_path = stream_manager.get_latest_frame_path()
+    if not frame_path or not os.path.exists(frame_path):
+        return JSONResponse(status_code=404, content={"status": "no_frames"})
+    return FileResponse(frame_path, media_type="image/png")
 
 
 @app.get("/api/v1/health", tags=["System"])
