@@ -2,10 +2,12 @@
 // BroadcastMonitors — 2×2 Video Feed Grid
 // ════════════════════════════════════════════════════════════════
 
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import type { TranscriptEvent, VisionEvent } from '../types/intel'
 import { DEMO_STREAMS } from '../lib/demo'
 import { formatUtcHMS } from '../lib/demo'
+
+const PYTHON_API_BASE = import.meta.env.VITE_PYTHON_URL || 'http://localhost:8000'
 
 interface BroadcastMonitorsProps {
   transcripts:  TranscriptEvent[]
@@ -51,6 +53,19 @@ function AudioBars() {
 }
 
 function LiveTile({ tile }: { tile: TileData }) {
+  const [frameTimestamp, setFrameTimestamp] = useState<number>(Date.now())
+  const [hasRealFrame, setHasRealFrame] = useState<boolean>(false)
+
+  // Refresh latest frame every 1000ms
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFrameTimestamp(Date.now())
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const frameUrl = `${PYTHON_API_BASE}/api/v1/frames/latest?ts=${frameTimestamp}`
+
   const caption =
     tile.lastTranscript?.segment.translated_text ||
     tile.lastTranscript?.segment.original_text ||
@@ -71,20 +86,33 @@ function LiveTile({ tile }: { tile: TileData }) {
       className="relative flex flex-col scanline-overlay video-noise overflow-hidden"
       style={{ background: gradient, minHeight: 0 }}
     >
-      {/* Simulated video texture / pseudo-feed */}
-      <div
-        className="absolute inset-0 opacity-30"
-        style={{
-          backgroundImage: `
-            radial-gradient(ellipse 60% 40% at 50% 30%, rgba(41,211,232,0.04) 0%, transparent 70%),
-            radial-gradient(ellipse 40% 60% at 70% 60%, rgba(41,211,232,0.02) 0%, transparent 80%)
-          `,
-        }}
+      {/* Real live frame or fallback simulated video */}
+      <img
+        src={frameUrl}
+        alt="Live broadcast feed"
+        onLoad={() => setHasRealFrame(true)}
+        onError={() => setHasRealFrame(false)}
+        className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 z-0 ${
+          hasRealFrame ? 'opacity-85' : 'opacity-0 pointer-events-none'
+        }`}
       />
 
+      {/* Simulated video texture / pseudo-feed (fallback when real frame not loaded) */}
+      {!hasRealFrame && (
+        <div
+          className="absolute inset-0 opacity-30"
+          style={{
+            backgroundImage: `
+              radial-gradient(ellipse 60% 40% at 50% 30%, rgba(41,211,232,0.04) 0%, transparent 70%),
+              radial-gradient(ellipse 40% 60% at 70% 60%, rgba(41,211,232,0.02) 0%, transparent 80%)
+            `,
+          }}
+        />
+      )}
+
       {/* Top bar: channel + timestamp + LIVE badge */}
-      <div className="relative z-20 flex items-center justify-between px-2 py-1 bg-gradient-to-b from-black/70 to-transparent">
-        <span className="text-si-text font-mono text-2xs font-semibold tracking-wider">
+      <div className="relative z-20 flex items-center justify-between px-2 py-1 bg-gradient-to-b from-black/80 via-black/50 to-transparent">
+        <span className="text-si-text font-mono text-2xs font-semibold tracking-wider drop-shadow-sm">
           {tile.channelName}
         </span>
         <div className="flex items-center gap-2">
@@ -96,31 +124,33 @@ function LiveTile({ tile }: { tile: TileData }) {
         </div>
       </div>
 
-      {/* Central content area — simulated video */}
+      {/* Central content area */}
       <div className="flex-1 relative z-10 flex items-center justify-center min-h-0">
         {/* Scene indicator */}
-        <div className="absolute top-1 left-2 text-si-muted/60 text-2xs font-mono tracking-widest">
+        <div className="absolute top-1 left-2 text-si-muted/80 text-2xs font-mono tracking-widest bg-black/40 px-1 rounded-sm">
           {sceneLabel}
         </div>
-        {/* Simulated figure / broadcast shape */}
-        <div
-          className="w-12 h-16 rounded-sm opacity-15"
-          style={{
-            background: 'linear-gradient(180deg, rgba(41,211,232,0.3) 0%, rgba(41,211,232,0.05) 100%)',
-            filter: 'blur(3px)',
-          }}
-        />
+        {/* Simulated figure / broadcast shape (only when real frame is absent) */}
+        {!hasRealFrame && (
+          <div
+            className="w-12 h-16 rounded-sm opacity-15"
+            style={{
+              background: 'linear-gradient(180deg, rgba(41,211,232,0.3) 0%, rgba(41,211,232,0.05) 100%)',
+              filter: 'blur(3px)',
+            }}
+          />
+        )}
       </div>
 
       {/* Bottom bar: caption + audio bars */}
-      <div className="relative z-20 bg-gradient-to-t from-black/85 to-transparent px-2 pb-1 pt-3">
+      <div className="relative z-20 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-2 pb-1 pt-3">
         {/* Caption text */}
-        <p className="text-si-text text-2xs font-mono leading-tight line-clamp-2 mb-1">
+        <p className="text-si-text text-2xs font-mono leading-tight line-clamp-2 mb-1 drop-shadow-sm">
           {caption.length > 90 ? caption.slice(0, 87) + '…' : caption}
         </p>
         {/* Metadata row */}
         <div className="flex items-center justify-between">
-          <span className="text-si-muted/60 text-2xs tracking-widest">
+          <span className="text-si-muted/80 text-2xs tracking-widest font-mono">
             {tile.streamId.toUpperCase()} ·{' '}
             {tile.lastTranscript?.segment.original_language?.toUpperCase() ?? 'EN'}
           </span>
