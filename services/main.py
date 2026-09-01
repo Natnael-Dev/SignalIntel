@@ -3,8 +3,9 @@
 Exposes REST and WebSocket APIs for:
 1. Live stream ingestion management (FFmpeg subprocess demux)
 2. Real-time audio transcription and translation (Whisper + Deep-Translator)
-3. Live WebSocket broadcast of SRT subtitle blocks
-4. High-frequency health telemetry and stream lifecycle monitoring
+3. Vision intelligence & scene classification + ticker OCR (LiteLLM + Rust OCR)
+4. Live WebSocket broadcast of SRT subtitle blocks and Vision events
+5. High-frequency health telemetry and stream lifecycle monitoring
 """
 
 import asyncio
@@ -21,8 +22,10 @@ from services.ingestion.models import StreamConfig, StreamStatus, FrameCapture, 
 from services.ingestion.stream_capture import StreamCapture
 from services.audio.models import TranscriptSegment, TranscriptEvent
 from services.audio.pipeline import AudioIntelligencePipeline
+from services.vision.models import VisionEvent, OcrResult, SceneClassification
+from services.vision.pipeline import VisionPipeline
 
-PROTOCOL_VERSION = "v1.2-realtime"
+PROTOCOL_VERSION = "v1.3-vision"
 MAX_EVENT_BUFFER = 500
 
 logging.basicConfig(
@@ -35,51 +38,94 @@ logger = logging.getLogger("signalintel.orchestrator")
 # ─── WEBSOCKET BROADCAST MANAGER ───────────────────────────────────────────
 
 class ConnectionManager:
-    """Manages active WebSocket client connections for real-time transcript streaming."""
+    """Manages active WebSocket client connections for real-time transcript & vision feeds."""
 
     def __init__(self):
-        self._global_connections: List[WebSocket] = []
-        self._stream_connections: Dict[str, List[WebSocket]] = {}
+        # Audio / Transcript connections
+        self._global_transcript_connections: List[WebSocket] = []
+        self._stream_transcript_connections: Dict[str, List[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, stream_id: Optional[str] = None):
+        # Vision / OCR connections
+        self._global_vision_connections: List[WebSocket] = []
+        self._stream_vision_connections: Dict[str, List[WebSocket]] = {}
+
+    # ── Transcript Connections ──
+    async def connect_transcript(self, websocket: WebSocket, stream_id: Optional[str] = None):
         await websocket.accept()
         if stream_id:
-            if stream_id not in self._stream_connections:
-                self._stream_connections[stream_id] = []
-            self._stream_connections[stream_id].append(websocket)
-            logger.info(f"WebSocket client connected to stream [{stream_id}]")
+            if stream_id not in self._stream_transcript_connections:
+                self._stream_transcript_connections[stream_id] = []
+            self._stream_transcript_connections[stream_id].append(websocket)
+            logger.info(f"WebSocket client connected to transcript stream [{stream_id}]")
         else:
-            self._global_connections.append(websocket)
+            self._global_transcript_connections.append(websocket)
             logger.info("WebSocket client connected to global transcript stream")
 
-    def disconnect(self, websocket: WebSocket, stream_id: Optional[str] = None):
-        if stream_id and stream_id in self._stream_connections:
-            if websocket in self._stream_connections[stream_id]:
-                self._stream_connections[stream_id].remove(websocket)
-            if not self._stream_connections[stream_id]:
-                del self._stream_connections[stream_id]
-        elif websocket in self._global_connections:
-            self._global_connections.remove(websocket)
-        logger.info(f"WebSocket client disconnected (stream_id={stream_id})")
+    def disconnect_transcript(self, websocket: WebSocket, stream_id: Optional[str] = None):
+        if stream_id and stream_id in self._stream_transcript_connections:
+            if websocket in self._stream_transcript_connections[stream_id]:
+                self._stream_transcript_connections[stream_id].remove(websocket)
+            if not self._stream_transcript_connections[stream_id]:
+                del self._stream_transcript_connections[stream_id]
+        elif websocket in self._global_transcript_connections:
+            self._global_transcript_connections.remove(websocket)
+        logger.info(f"WebSocket client disconnected from transcripts (stream_id={stream_id})")
 
     async def broadcast_transcript(self, event: TranscriptEvent):
         """Broadcasts transcript event to global and stream-specific subscribers."""
         payload = event.model_dump_json()
 
-        # Send to global subscribers
-        for ws in list(self._global_connections):
+        for ws in list(self._global_transcript_connections):
             try:
                 await ws.send_text(payload)
             except Exception:
-                self.disconnect(ws)
+                self.disconnect_transcript(ws)
 
-        # Send to stream-specific subscribers
-        if event.stream_id in self._stream_connections:
-            for ws in list(self._stream_connections[event.stream_id]):
+        if event.stream_id in self._stream_transcript_connections:
+            for ws in list(self._stream_transcript_connections[event.stream_id]):
                 try:
                     await ws.send_text(payload)
                 except Exception:
-                    self.disconnect(ws, event.stream_id)
+                    self.disconnect_transcript(ws, event.stream_id)
+
+    # ── Vision Connections ──
+    async def connect_vision(self, websocket: WebSocket, stream_id: Optional[str] = None):
+        await websocket.accept()
+        if stream_id:
+            if stream_id not in self._stream_vision_connections:
+                self._stream_vision_connections[stream_id] = []
+            self._stream_vision_connections[stream_id].append(websocket)
+            logger.info(f"WebSocket client connected to vision stream [{stream_id}]")
+        else:
+            self._global_vision_connections.append(websocket)
+            logger.info("WebSocket client connected to global vision stream")
+
+    def disconnect_vision(self, websocket: WebSocket, stream_id: Optional[str] = None):
+        if stream_id and stream_id in self._stream_vision_connections:
+            if websocket in self._stream_vision_connections[stream_id]:
+                self._stream_vision_connections[stream_id].remove(websocket)
+            if not self._stream_vision_connections[stream_id]:
+                del self._stream_vision_connections[stream_id]
+        elif websocket in self._global_vision_connections:
+            self._global_vision_connections.remove(websocket)
+        logger.info(f"WebSocket client disconnected from vision (stream_id={stream_id})")
+
+    async def broadcast_vision(self, event: VisionEvent):
+        """Broadcasts vision event to global and stream-specific subscribers."""
+        payload = event.model_dump_json()
+
+        for ws in list(self._global_vision_connections):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                self.disconnect_vision(ws)
+
+        if event.stream_id in self._stream_vision_connections:
+            for ws in list(self._stream_vision_connections[event.stream_id]):
+                try:
+                    await ws.send_text(payload)
+                except Exception:
+                    self.disconnect_vision(ws, event.stream_id)
 
 
 ws_manager = ConnectionManager()
@@ -88,15 +134,18 @@ ws_manager = ConnectionManager()
 # ─── STREAM PIPELINE MANAGER ────────────────────────────────────────────────
 
 class StreamManager:
-    """Orchestrates active stream capture sessions and audio intelligence pipelines."""
+    """Orchestrates active stream capture sessions, audio and vision intelligence pipelines."""
 
     def __init__(self):
         self.active_streams: Dict[str, StreamCapture] = {}
         self.audio_pipelines: Dict[str, AudioIntelligencePipeline] = {}
+        self.vision_pipelines: Dict[str, VisionPipeline] = {}
         self.stream_configs: Dict[str, StreamConfig] = {}
         self.recent_events: List[TranscriptEvent] = []
+        self.recent_vision_events: List[VisionEvent] = []
         self.total_frames_captured: int = 0
         self.total_transcripts_produced: int = 0
+        self.total_vision_events_produced: int = 0
         self.start_time: datetime = datetime.utcnow()
 
     async def start_stream(self, config: StreamConfig) -> StreamStatus:
@@ -106,24 +155,42 @@ class StreamManager:
             if existing.status.status == "active":
                 return existing.status
 
-        # Create audio intelligence pipeline instance for this stream
-        pipeline = AudioIntelligencePipeline(
+        # Create audio and vision intelligence pipeline instances
+        audio_pipeline = AudioIntelligencePipeline(
             model_size="base",
             default_target_lang=config.target_lang,
         )
-        self.audio_pipelines[config.stream_id] = pipeline
+        vision_pipeline = VisionPipeline(
+            stream_id=config.stream_id,
+            channel_name=config.channel_name,
+        )
+
+        self.audio_pipelines[config.stream_id] = audio_pipeline
+        self.vision_pipelines[config.stream_id] = vision_pipeline
         self.stream_configs[config.stream_id] = config
 
         # Define callbacks for frames and audio chunks
         async def handle_frame(frame: FrameCapture):
             self.total_frames_captured += 1
             logger.debug(f"Frame #{frame.frame_index} captured for stream [{frame.stream_id}]")
+            try:
+                # Concurrently crop lower-third ticker, run OCR, and classify scene via VLM
+                vision_event = await vision_pipeline.process_frame(frame)
+                self.total_vision_events_produced += 1
+                self.recent_vision_events.append(vision_event)
+                if len(self.recent_vision_events) > MAX_EVENT_BUFFER:
+                    self.recent_vision_events.pop(0)
+
+                # Broadcast via WebSocket
+                await ws_manager.broadcast_vision(vision_event)
+            except Exception as err:
+                logger.error(f"Error processing frame #{frame.frame_index} in vision pipeline: {err}", exc_info=True)
 
         async def handle_audio_chunk(chunk: AudioChunk):
             logger.info(f"Processing audio chunk #{chunk.chunk_index} for stream [{chunk.stream_id}]")
             try:
                 # Process audio chunk through Whisper + Google Translate + SRT Formatter
-                segments = pipeline.process_audio_chunk(
+                segments = audio_pipeline.process_audio_chunk(
                     audio_source=chunk.file_path,
                     start_offset_seconds=chunk.start_time_seconds,
                     target_lang=config.target_lang,
@@ -139,7 +206,7 @@ class StreamManager:
                         segment=seg,
                     )
                     self.recent_events.append(event)
-                    if len(self.recent_events) > 500:
+                    if len(self.recent_events) > MAX_EVENT_BUFFER:
                         self.recent_events.pop(0)
 
                     # Broadcast via WebSocket
@@ -165,6 +232,9 @@ class StreamManager:
             del self.active_streams[stream_id]
             if stream_id in self.audio_pipelines:
                 del self.audio_pipelines[stream_id]
+            if stream_id in self.vision_pipelines:
+                self.vision_pipelines[stream_id].stop()
+                del self.vision_pipelines[stream_id]
             return True
         return False
 
@@ -189,9 +259,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SignalIntel Media Processing & Audio Intelligence API",
-    description="Asynchronous multi-stream video demux, Whisper STT, and Google Translate SRT pipeline.",
-    version="0.2.0",
+    title="SignalIntel Media Processing, Audio & Vision Intelligence API",
+    description="Asynchronous multi-stream video demux, Whisper STT, Google Translate SRT, Scene VLM & Ticker OCR pipeline.",
+    version="0.3.0",
     lifespan=lifespan,
 )
 
@@ -211,18 +281,20 @@ async def get_health():
     return {
         "status": "healthy",
         "service": "signalintel-media-orchestrator",
-        "version": "0.2.0",
+        "version": "0.3.0",
+        "protocol": PROTOCOL_VERSION,
         "uptime_seconds": round(uptime_seconds, 1),
         "active_streams_count": len(stream_manager.active_streams),
         "total_frames_captured": stream_manager.total_frames_captured,
         "total_transcripts_produced": stream_manager.total_transcripts_produced,
+        "total_vision_events_produced": stream_manager.total_vision_events_produced,
         "timestamp": datetime.utcnow().isoformat(),
     }
 
 
 @app.post("/api/v1/streams/start", response_model=StreamStatus, tags=["Streams"])
 async def start_stream(config: StreamConfig):
-    """Spawns an asynchronous FFmpeg demuxer and audio intelligence pipeline for a stream."""
+    """Spawns an asynchronous FFmpeg demuxer, audio intelligence, and vision pipeline for a stream."""
     try:
         status = await stream_manager.start_stream(config)
         return status
@@ -262,33 +334,64 @@ async def get_recent_transcripts(limit: int = 50):
     return stream_manager.recent_events[-limit:]
 
 
+@app.get("/api/v1/vision/recent", response_model=List[VisionEvent], tags=["Vision"])
+async def get_recent_vision_events(limit: int = 50):
+    """Retrieves the most recent vision classification and ticker OCR events."""
+    return stream_manager.recent_vision_events[-limit:]
+
+
 # ─── WEBSOCKET ENDPOINTS ───────────────────────────────────────────────────
 
 @app.websocket("/api/v1/ws/transcripts")
 async def ws_transcripts_global(websocket: WebSocket):
     """Global WebSocket feed streaming live SRT subtitle blocks across all active streams."""
-    await ws_manager.connect(websocket)
+    await ws_manager.connect_transcript(websocket)
     try:
         while True:
-            # Keep connection alive; client can send pings
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        ws_manager.disconnect_transcript(websocket)
     except Exception:
-        ws_manager.disconnect(websocket)
+        ws_manager.disconnect_transcript(websocket)
 
 
 @app.websocket("/api/v1/ws/transcripts/{stream_id}")
 async def ws_transcripts_stream(websocket: WebSocket, stream_id: str):
     """Stream-specific WebSocket feed for live subtitle blocks."""
-    await ws_manager.connect(websocket, stream_id=stream_id)
+    await ws_manager.connect_transcript(websocket, stream_id=stream_id)
     try:
         while True:
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, stream_id=stream_id)
+        ws_manager.disconnect_transcript(websocket, stream_id=stream_id)
     except Exception:
-        ws_manager.disconnect(websocket, stream_id=stream_id)
+        ws_manager.disconnect_transcript(websocket, stream_id=stream_id)
+
+
+@app.websocket("/api/v1/ws/vision")
+async def ws_vision_global(websocket: WebSocket):
+    """Global WebSocket feed streaming live scene classification & ticker OCR events."""
+    await ws_manager.connect_vision(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect_vision(websocket)
+    except Exception:
+        ws_manager.disconnect_vision(websocket)
+
+
+@app.websocket("/api/v1/ws/vision/{stream_id}")
+async def ws_vision_stream(websocket: WebSocket, stream_id: str):
+    """Stream-specific WebSocket feed for live scene classification & ticker OCR."""
+    await ws_manager.connect_vision(websocket, stream_id=stream_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect_vision(websocket, stream_id=stream_id)
+    except Exception:
+        ws_manager.disconnect_vision(websocket, stream_id=stream_id)
 
 
 if __name__ == "__main__":
