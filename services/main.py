@@ -18,6 +18,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Back
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+import os
+import httpx
 from services.ingestion.models import StreamConfig, StreamStatus, FrameCapture, AudioChunk
 from services.ingestion.stream_capture import StreamCapture
 from services.audio.models import TranscriptSegment, TranscriptEvent
@@ -25,14 +27,26 @@ from services.audio.pipeline import AudioIntelligencePipeline
 from services.vision.models import VisionEvent, OcrResult, SceneClassification
 from services.vision.pipeline import VisionPipeline
 
-PROTOCOL_VERSION = "v1.3-vision"
+PROTOCOL_VERSION = "v1.4-brain-ipc"
 MAX_EVENT_BUFFER = 500
+RUST_BRAIN_INGEST_URL = os.getenv("SIGNALINTEL_BRAIN_URL", "http://127.0.0.1:8080/api/v1/ingest")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
 )
 logger = logging.getLogger("signalintel.orchestrator")
+
+
+async def forward_to_rust_brain(payload: dict):
+    """Asynchronously forwards TranscriptEvent or VisionEvent to the Rust Brain gateway."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(RUST_BRAIN_INGEST_URL, json=payload)
+    except Exception as exc:
+        # Non-blocking fire-and-forget: do not interrupt stream processing if gateway is starting up
+        logger.debug(f"Brain IPC notice: {exc}")
+
 
 
 # ─── WEBSOCKET BROADCAST MANAGER ───────────────────────────────────────────
@@ -183,6 +197,9 @@ class StreamManager:
 
                 # Broadcast via WebSocket
                 await ws_manager.broadcast_vision(vision_event)
+
+                # Forward to Rust Brain via IPC Ingest API
+                asyncio.create_task(forward_to_rust_brain(vision_event.model_dump(mode="json")))
             except Exception as err:
                 logger.error(f"Error processing frame #{frame.frame_index} in vision pipeline: {err}", exc_info=True)
 
@@ -211,6 +228,9 @@ class StreamManager:
 
                     # Broadcast via WebSocket
                     await ws_manager.broadcast_transcript(event)
+
+                    # Forward to Rust Brain via IPC Ingest API
+                    asyncio.create_task(forward_to_rust_brain(event.model_dump(mode="json")))
             except Exception as err:
                 logger.error(f"Error handling audio chunk #{chunk.chunk_index}: {err}", exc_info=True)
 
