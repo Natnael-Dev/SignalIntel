@@ -58,7 +58,15 @@ impl IntelEvent {
             "source_lang": source_lang,
             "target_lang": target_lang,
         });
-        Self::new(stream_id, channel_name, timestamp, "transcript", text, confidence, meta)
+        Self::new(
+            stream_id,
+            channel_name,
+            timestamp,
+            "transcript",
+            text,
+            confidence,
+            meta,
+        )
     }
 
     /// Helper to construct an IntelEvent from a vision classification / ticker OCR event.
@@ -84,6 +92,14 @@ impl IntelEvent {
             "description": description,
         });
 
-        Self::new(stream_id, channel_name, timestamp, "vision", text_content, confidence, meta)
+        Self::new(
+            stream_id,
+            channel_name,
+            timestamp,
+            "vision",
+            text_content,
+            confidence,
+            meta,
+        )
     }
 }

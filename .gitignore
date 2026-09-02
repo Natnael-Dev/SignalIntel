@@ -1,7 +1,6 @@
 # Rust
 target/
 **/*.rs.bk
-Cargo.lock
 
 # Python
 __pycache__/
@@ -16,8 +15,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -50,14 +47,28 @@ xinference/
 # Node / UI
 node_modules/
 dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 .next/
 
-# Environment & IDE
+# Environment & Secrets
 .env
 .env.local
+.env.*.local
+*.pem
+*.key
+
+# IDE & OS
 .vscode/
 .idea/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# Binaries & Build Artifacts
+bin/
+*.exe

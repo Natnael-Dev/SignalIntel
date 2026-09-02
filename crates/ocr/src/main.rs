@@ -17,7 +17,11 @@ const EXIT_TESSERACT_NOT_FOUND: u8 = 3;
 
 fn print_json_error(error_code: &str, details: Option<&str>) {
     let json_output = match details {
-        Some(d) => format!(r#"{{"error":"{}","details":"{}"}}"#, error_code, d.replace('"', "\\\"")),
+        Some(d) => format!(
+            r#"{{"error":"{}","details":"{}"}}"#,
+            error_code,
+            d.replace('"', "\\\"")
+        ),
         None => format!(r#"{{"error":"{}"}}"#, error_code),
     };
     eprintln!("{}", json_output);
@@ -61,7 +65,10 @@ fn main() -> ExitCode {
     let target_image = match image_path {
         Some(p) => p,
         None => {
-            print_json_error("INVALID_ARGUMENTS", Some("Missing required --image argument"));
+            print_json_error(
+                "INVALID_ARGUMENTS",
+                Some("Missing required --image argument"),
+            );
             return ExitCode::from(EXIT_USAGE_ERROR);
         }
     };
@@ -102,18 +109,16 @@ fn main() -> ExitCode {
 
     let stdout_tsv = String::from_utf8_lossy(&output.stdout);
     match parse_tesseract_tsv(&stdout_tsv) {
-        Ok(ocr_result) => {
-            match serde_json::to_string(&ocr_result) {
-                Ok(json_str) => {
-                    println!("{}", json_str);
-                    ExitCode::from(EXIT_SUCCESS)
-                }
-                Err(err) => {
-                    print_json_error("JSON_SERIALIZE_ERROR", Some(&err.to_string()));
-                    ExitCode::from(EXIT_GENERAL_ERROR)
-                }
+        Ok(ocr_result) => match serde_json::to_string(&ocr_result) {
+            Ok(json_str) => {
+                println!("{}", json_str);
+                ExitCode::from(EXIT_SUCCESS)
             }
-        }
+            Err(err) => {
+                print_json_error("JSON_SERIALIZE_ERROR", Some(&err.to_string()));
+                ExitCode::from(EXIT_GENERAL_ERROR)
+            }
+        },
         Err(err) => {
             print_json_error("TSV_PARSE_ERROR", Some(&err));
             ExitCode::from(EXIT_GENERAL_ERROR)

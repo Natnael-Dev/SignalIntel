@@ -2,8 +2,8 @@
 //!
 //! Pending official Discord Bot API integration.
 
-use async_trait::async_trait;
 use crate::{ChannelError, ChannelProvider};
+use async_trait::async_trait;
 
 /// Discord Channel Dispatcher (Coming Soon).
 #[derive(Debug, Clone, Default)]
@@ -18,7 +18,9 @@ impl DiscordChannel {
 #[async_trait]
 impl ChannelProvider for DiscordChannel {
     async fn send_message(&self, _target: &str, _text: &str) -> Result<(), ChannelError> {
-        Err(ChannelError::ComingSoon("WhatsApp/Discord integration pending"))
+        Err(ChannelError::ComingSoon(
+            "WhatsApp/Discord integration pending",
+        ))
     }
 }
 
@@ -31,7 +33,9 @@ mod tests {
         let channel = DiscordChannel::new();
         let result = channel.send_message("channel_123", "Hello Discord").await;
         match result {
-            Err(ChannelError::ComingSoon(msg)) => assert_eq!(msg, "WhatsApp/Discord integration pending"),
+            Err(ChannelError::ComingSoon(msg)) => {
+                assert_eq!(msg, "WhatsApp/Discord integration pending")
+            }
             _ => panic!("Expected ComingSoon error"),
         }
     }

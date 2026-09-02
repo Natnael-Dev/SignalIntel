@@ -2,8 +2,8 @@
 //!
 //! Posts real-time broadcast alerts directly to Telegram channels/chats.
 
-use std::env;
 use async_trait::async_trait;
+use std::env;
 use tracing::{debug, error, info};
 
 use crate::{ChannelError, ChannelProvider};
@@ -40,7 +40,10 @@ impl ChannelProvider for TelegramChannel {
         let token = match &self.bot_token {
             Some(t) if !t.trim().is_empty() => t,
             _ => {
-                debug!("TELEGRAM_BOT_TOKEN not configured; simulating Telegram alert to chat [{}]", target);
+                debug!(
+                    "TELEGRAM_BOT_TOKEN not configured; simulating Telegram alert to chat [{}]",
+                    target
+                );
                 return Ok(());
             }
         };
@@ -53,7 +56,8 @@ impl ChannelProvider for TelegramChannel {
             "disable_web_page_preview": true
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .json(&payload)
             .send()
@@ -61,13 +65,19 @@ impl ChannelProvider for TelegramChannel {
             .map_err(ChannelError::Network)?;
 
         if resp.status().is_success() {
-            info!("Successfully dispatched Telegram alert to chat [{}]", target);
+            info!(
+                "Successfully dispatched Telegram alert to chat [{}]",
+                target
+            );
             Ok(())
         } else {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             error!("Telegram API error {}: {}", status, body);
-            Err(ChannelError::Dispatch(format!("Telegram API responded with {}: {}", status, body)))
+            Err(ChannelError::Dispatch(format!(
+                "Telegram API responded with {}: {}",
+                status, body
+            )))
         }
     }
 }

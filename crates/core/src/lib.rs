@@ -1,10 +1,10 @@
 //! SignalIntel Core Engine
 //! Orchestrates Multimodal Intelligence, RAG Retrieval, and Real-time Alerting.
 
+pub mod alerts;
 pub mod models;
 pub mod rag;
-pub mod alerts;
 
+pub use alerts::{evaluate_rules, AlertRule, TriggeredAlert};
 pub use models::IntelEvent;
-pub use rag::{QdrantClient, SearchResult, RRF_K, compute_rrf_score};
-pub use alerts::{AlertRule, TriggeredAlert, evaluate_rules};
+pub use rag::{compute_rrf_score, QdrantClient, SearchResult, RRF_K};

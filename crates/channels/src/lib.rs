@@ -25,10 +25,10 @@ pub trait ChannelProvider: Send + Sync {
     async fn send_message(&self, target: &str, text: &str) -> Result<(), ChannelError>;
 }
 
+pub mod discord;
 pub mod telegram;
 pub mod whatsapp;
-pub mod discord;
 
+pub use discord::DiscordChannel;
 pub use telegram::TelegramChannel;
 pub use whatsapp::WhatsAppChannel;
-pub use discord::DiscordChannel;

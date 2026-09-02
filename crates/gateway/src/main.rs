@@ -7,9 +7,6 @@
 //! 4. GET|POST /api/v1/alerts/rules — Manages real-time keyword alert rules.
 //! 5. GET  /api/v1/health   — Health telemetry and orchestrator metrics.
 
-use std::collections::VecDeque;
-use std::net::SocketAddr;
-use std::sync::Arc;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -18,15 +15,16 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use signalintel_channels::{ChannelProvider, TelegramChannel};
-use signalintel_core::{
-    evaluate_rules, AlertRule, IntelEvent, QdrantClient, TriggeredAlert,
-};
+use signalintel_core::{evaluate_rules, AlertRule, IntelEvent, QdrantClient, TriggeredAlert};
 
 /// Maximum alert history entries to keep in memory.
 const MAX_ALERT_HISTORY: usize = 200;
@@ -229,7 +227,10 @@ async fn handle_ingest(
 
     info!(
         "Ingested {} event [{}] from stream [{}] - {} alert(s) triggered",
-        event_type, intel_event.event_id, stream_id, triggered_alerts.len()
+        event_type,
+        intel_event.event_id,
+        stream_id,
+        triggered_alerts.len()
     );
 
     Ok(Json(IngestResponse {
@@ -295,7 +296,10 @@ async fn handle_create_rule(
 ) -> impl IntoResponse {
     let mut rules = state.alert_rules.write().await;
     rules.push(new_rule.clone());
-    info!("Registered new alert rule [id={}] with keywords: {:?}", new_rule.id, new_rule.keywords);
+    info!(
+        "Registered new alert rule [id={}] with keywords: {:?}",
+        new_rule.id, new_rule.keywords
+    );
     (StatusCode::CREATED, Json(new_rule))
 }
 
@@ -310,7 +314,10 @@ pub fn create_app(state: AppState) -> Router {
         .route("/api/v1/ingest", post(handle_ingest))
         .route("/api/v1/search", get(handle_search))
         .route("/api/v1/alerts", get(handle_get_alerts))
-        .route("/api/v1/alerts/rules", get(handle_list_rules).post(handle_create_rule))
+        .route(
+            "/api/v1/alerts/rules",
+            get(handle_list_rules).post(handle_create_rule),
+        )
         .layer(cors)
         .with_state(state)
 }
@@ -329,54 +336,72 @@ async fn main() -> anyhow::Result<()> {
         AlertRule::new(
             "rule_mil_activity",
             vec![
-                "military exercises".into(), "carrier strike group".into(),
-                "naval operations".into(), "airspace incursion".into(),
+                "military exercises".into(),
+                "carrier strike group".into(),
+                "naval operations".into(),
+                "airspace incursion".into(),
                 "tactical maneuvers".into(),
             ],
             Some("signalintel_mil_channel".into()),
             None,
-        ).with_priority("P1").with_name("Military Activity Monitor"),
-
+        )
+        .with_priority("P1")
+        .with_name("Military Activity Monitor"),
         AlertRule::new(
             "rule_breaking",
             vec![
-                "breaking news".into(), "urgent".into(),
-                "developing story".into(), "emergency".into(),
+                "breaking news".into(),
+                "urgent".into(),
+                "developing story".into(),
+                "emergency".into(),
             ],
             Some("signalintel_alerts_channel".into()),
             None,
-        ).with_priority("P1").with_name("Breaking News Detector"),
-
+        )
+        .with_priority("P1")
+        .with_name("Breaking News Detector"),
         AlertRule::new(
             "rule_geopolitics",
             vec![
-                "sanctions".into(), "diplomatic crisis".into(),
-                "summit cancelled".into(), "evacuation".into(),
+                "sanctions".into(),
+                "diplomatic crisis".into(),
+                "summit cancelled".into(),
+                "evacuation".into(),
                 "coup".into(),
             ],
             Some("signalintel_geo_channel".into()),
             None,
-        ).with_priority("P2").with_name("Geopolitical Events"),
-
+        )
+        .with_priority("P2")
+        .with_name("Geopolitical Events"),
         AlertRule::new(
             "rule_markets",
             vec![
-                "interest rate".into(), "federal reserve".into(),
-                "opec".into(), "s&p 500".into(), "market crash".into(),
+                "interest rate".into(),
+                "federal reserve".into(),
+                "opec".into(),
+                "s&p 500".into(),
+                "market crash".into(),
             ],
             Some("signalintel_finance_channel".into()),
             None,
-        ).with_priority("P2").with_name("Market Intelligence"),
-
+        )
+        .with_priority("P2")
+        .with_name("Market Intelligence"),
         AlertRule::new(
             "rule_social_spike",
             vec![
-                "viral".into(), "trending".into(), "protests".into(),
-                "riots".into(), "mass demonstration".into(),
+                "viral".into(),
+                "trending".into(),
+                "protests".into(),
+                "riots".into(),
+                "mass demonstration".into(),
             ],
             None,
             None,
-        ).with_priority("P3").with_name("Social Sentiment Spike"),
+        )
+        .with_priority("P3")
+        .with_name("Social Sentiment Spike"),
     ];
 
     let state = AppState {

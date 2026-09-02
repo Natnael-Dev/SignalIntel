@@ -2,8 +2,8 @@
 //!
 //! Pending official Meta WhatsApp Cloud API integration.
 
-use async_trait::async_trait;
 use crate::{ChannelError, ChannelProvider};
+use async_trait::async_trait;
 
 /// WhatsApp Business Channel Dispatcher (Coming Soon).
 #[derive(Debug, Clone, Default)]
@@ -18,7 +18,9 @@ impl WhatsAppChannel {
 #[async_trait]
 impl ChannelProvider for WhatsAppChannel {
     async fn send_message(&self, _target: &str, _text: &str) -> Result<(), ChannelError> {
-        Err(ChannelError::ComingSoon("WhatsApp/Discord integration pending"))
+        Err(ChannelError::ComingSoon(
+            "WhatsApp/Discord integration pending",
+        ))
     }
 }
 
@@ -31,7 +33,9 @@ mod tests {
         let channel = WhatsAppChannel::new();
         let result = channel.send_message("+1234567890", "Hello WhatsApp").await;
         match result {
-            Err(ChannelError::ComingSoon(msg)) => assert_eq!(msg, "WhatsApp/Discord integration pending"),
+            Err(ChannelError::ComingSoon(msg)) => {
+                assert_eq!(msg, "WhatsApp/Discord integration pending")
+            }
             _ => panic!("Expected ComingSoon error"),
         }
     }

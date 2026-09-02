@@ -3,10 +3,10 @@
 //! Implements Vector indexing and Hybrid Search combining Dense Embedding
 //! and Sparse Keyword Retrieval via Reciprocal Rank Fusion (RRF, k=60).
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::debug;
 
@@ -108,8 +108,16 @@ impl QdrantClient {
 
     /// Computes a lightweight BM25 keyword score for sparse matching.
     fn compute_bm25_sparse_score(query: &str, text: &str) -> f64 {
-        let query_terms: Vec<String> = query.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
-        let doc_terms: Vec<String> = text.to_lowercase().split_whitespace().map(|s| s.to_string()).collect();
+        let query_terms: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
+        let doc_terms: Vec<String> = text
+            .to_lowercase()
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         if query_terms.is_empty() || doc_terms.is_empty() {
             return 0.0;
@@ -161,14 +169,29 @@ impl QdrantClient {
             ]
         });
 
-        let endpoint = format!("{}/collections/{}/points", self.base_url, self.collection_name);
+        let endpoint = format!(
+            "{}/collections/{}/points",
+            self.base_url, self.collection_name
+        );
 
-        match self.client.put(&endpoint).json(&qdrant_payload).send().await {
+        match self
+            .client
+            .put(&endpoint)
+            .json(&qdrant_payload)
+            .send()
+            .await
+        {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    debug!("Successfully indexed event [{}] into Qdrant", event.event_id);
+                    debug!(
+                        "Successfully indexed event [{}] into Qdrant",
+                        event.event_id
+                    );
                 } else {
-                    debug!("Qdrant endpoint responded with {}: indexing cached in-memory", resp.status());
+                    debug!(
+                        "Qdrant endpoint responded with {}: indexing cached in-memory",
+                        resp.status()
+                    );
                 }
             }
             Err(err) => {
@@ -180,7 +203,11 @@ impl QdrantClient {
     }
 
     /// Performs Hybrid Search blending Dense Vector similarity and Sparse BM25 via RRF (k=60).
-    pub async fn hybrid_search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>, anyhow::Error> {
+    pub async fn hybrid_search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SearchResult>, anyhow::Error> {
         let events = self.in_memory_events.read().await.clone();
         if events.is_empty() {
             return Ok(Vec::new());
@@ -228,8 +255,16 @@ impl QdrantClient {
             .map(|(idx, ev)| {
                 let d_rank = dense_ranks.get(&idx).copied();
                 let s_rank = sparse_ranks.get(&idx).copied();
-                let d_score = dense_scored.iter().find(|(i, _)| *i == idx).map(|(_, s)| *s).unwrap_or(0.0);
-                let s_score = sparse_scored.iter().find(|(i, _)| *i == idx).map(|(_, s)| *s).unwrap_or(0.0);
+                let d_score = dense_scored
+                    .iter()
+                    .find(|(i, _)| *i == idx)
+                    .map(|(_, s)| *s)
+                    .unwrap_or(0.0);
+                let s_score = sparse_scored
+                    .iter()
+                    .find(|(i, _)| *i == idx)
+                    .map(|(_, s)| *s)
+                    .unwrap_or(0.0);
                 let rrf = compute_rrf_score(d_rank, s_rank, RRF_K);
 
                 SearchResult {
@@ -246,7 +281,11 @@ impl QdrantClient {
             .collect();
 
         // Sort by RRF score descending
-        rrf_results.sort_by(|a, b| b.rrf_score.partial_cmp(&a.rrf_score).unwrap_or(std::cmp::Ordering::Equal));
+        rrf_results.sort_by(|a, b| {
+            b.rrf_score
+                .partial_cmp(&a.rrf_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Return top results up to limit
         Ok(rrf_results.into_iter().take(limit).collect())
@@ -311,7 +350,10 @@ mod tests {
         client.index_event(&ev2).await.unwrap();
         client.index_event(&ev3).await.unwrap();
 
-        let results = client.hybrid_search("Federal Reserve inflation rates", 3).await.unwrap();
+        let results = client
+            .hybrid_search("Federal Reserve inflation rates", 3)
+            .await
+            .unwrap();
 
         assert!(!results.is_empty());
         // First result should be ev1 (exact match for Federal Reserve inflation)

@@ -3,8 +3,8 @@
 //! Evaluates incoming broadcast intelligence events against active user keyword rules
 //! and generates triggered dispatch actions for downstream bot channels.
 
-use serde::{Deserialize, Serialize};
 use crate::models::IntelEvent;
+use serde::{Deserialize, Serialize};
 
 /// User-configured keyword alert rule.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -148,7 +148,9 @@ mod tests {
         assert_eq!(triggered[0].rule_id, "rule_oil");
         assert_eq!(triggered[0].matched_keywords.len(), 2);
         assert!(triggered[0].matched_keywords.contains(&"OPEC".to_string()));
-        assert!(triggered[0].matched_keywords.contains(&"crude oil".to_string()));
+        assert!(triggered[0]
+            .matched_keywords
+            .contains(&"crude oil".to_string()));
         assert_eq!(triggered[0].telegram_chat_id, Some("123456789".into()));
     }
 
@@ -178,8 +180,21 @@ mod tests {
 
     #[test]
     fn test_evaluate_rules_no_match() {
-        let rule = AlertRule::new("rule_sports", vec!["championship".into(), "soccer".into()], None, None);
-        let event = IntelEvent::from_transcript("stream1", "cnbc", 1.0, "Tech stocks rally on earnings beat.", 0.95, "en", "en");
+        let rule = AlertRule::new(
+            "rule_sports",
+            vec!["championship".into(), "soccer".into()],
+            None,
+            None,
+        );
+        let event = IntelEvent::from_transcript(
+            "stream1",
+            "cnbc",
+            1.0,
+            "Tech stocks rally on earnings beat.",
+            0.95,
+            "en",
+            "en",
+        );
 
         let triggered = evaluate_rules(&event, &[rule]);
         assert!(triggered.is_empty());
